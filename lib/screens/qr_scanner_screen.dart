@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/api_service.dart';
@@ -14,8 +16,9 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   bool isFlashOn = false;
   bool isCameraOn = false;
   String? scanResult;
-  String selectedRating = "";
+  String selectedScore = "";
   late MobileScannerController cameraController;
+  Map<String, dynamic>? apiResponse;
 
   @override
   void initState() {
@@ -34,11 +37,12 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     setState(() {
       isProcessing = true;
       scanResult = code;
-      isCameraOn = false; // Automatically stop camera after successful scan
+      isCameraOn = false;
+      apiResponse = null;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Scanned: $code')),
+      SnackBar(content: Text('تم مسح الكود: $code')),
     );
 
     await Future.delayed(const Duration(seconds: 1));
@@ -46,26 +50,46 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   }
 
   void _submit() async {
-    if (scanResult == null || selectedRating.isEmpty) return;
+    if (scanResult == null || selectedScore.isEmpty) return;
 
-    final response = await ApiService.sendQrData(scanResult!, selectedRating);
+    setState(() => isProcessing = true);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(response)),
-    );
+    try {
+      final response = await ApiService.sendQrData(scanResult!, selectedScore);
 
-    setState(() {
-      scanResult = null;
-      selectedRating = "";
-    });
+      // Check if response is already a Map
+      if (response is Map<String, dynamic>) {
+        setState(() {
+          apiResponse = response;
+        });
+      }
+      // If response needs parsing (e.g., from JSON string)
+      else if (response is String) {
+        try {
+          final parsedResponse = json.decode(response as String) as Map<String, dynamic>;
+          setState(() {
+            apiResponse = parsedResponse;
+          });
+        } catch (e) {
+          throw Exception('Failed to parse response: $e');
+        }
+      } else {
+        throw Exception('Unexpected response type');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ: ${e.toString()}')),
+      );
+    } finally {
+      setState(() => isProcessing = false);
+    }
   }
 
   void _startCamera() {
     setState(() {
-      scanResult = null; // Reset scan result when starting new scan
+      scanResult = null;
       isCameraOn = true;
     });
-    // Reinitialize the controller to ensure fresh state
     cameraController = MobileScannerController();
   }
 
@@ -80,10 +104,40 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     super.dispose();
   }
 
+  Widget _buildInfoRow(String label, String value, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              color: Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("QR Code Scanner")),
+      appBar: AppBar(
+        title: const Text("مسح كود QR"),
+        backgroundColor: const Color(0xFFf9d950),
+      ),
+      backgroundColor: const Color(0xFFf9f5e1),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -100,7 +154,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                   else
                     Container(
                       color: Colors.grey[300],
-                      child: const Center(child: Text("Camera is off")),
+                      child: const Center(child: Text("الكاميرا مغلقة")),
                     ),
                   Center(
                     child: Container(
@@ -121,35 +175,140 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
               children: [
                 ElevatedButton.icon(
                   icon: const Icon(Icons.play_circle_fill),
-                  label: const Text("Start"),
+                  label: const Text("تشغيل"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFf9d950),
+                    foregroundColor: Colors.black,
+                  ),
                   onPressed: isCameraOn ? null : _startCamera,
                 ),
                 const SizedBox(width: 10),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.stop_circle),
-                  label: const Text("Stop"),
+                  label: const Text("إيقاف"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFf9d950),
+                    foregroundColor: Colors.black,
+                  ),
                   onPressed: !isCameraOn ? null : _stopCamera,
                 ),
               ],
             ),
             if (scanResult != null) ...[
               const SizedBox(height: 20),
-              Text("Scanned: $scanResult", style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text("تم مسح: $scanResult",
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
-                value: selectedRating.isEmpty ? null : selectedRating,
-                decoration: const InputDecoration(labelText: "Select Rating (1-5)"),
-                items: [1, 2, 3, 4, 5].map((num) {
-                  return DropdownMenuItem(value: num.toString(), child: Text(num.toString()));
-                }).toList(),
-                onChanged: (value) => setState(() => selectedRating = value ?? ""),
+                value: selectedScore.isEmpty ? null : selectedScore,
+                decoration: InputDecoration(
+                  labelText: "اختيار النقاط",
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: "50",
+                    child: Row(
+                      children: [
+                        Icon(Icons.construction, color: Colors.yellow),
+                        SizedBox(width: 8),
+                        Text("حضور اول ١٠ دقايق = ٥٠ طوبة"),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: "25",
+                    child: Row(
+                      children: [
+                        Icon(Icons.construction, color: Colors.yellow),
+                        SizedBox(width: 8),
+                        Text("حضور تاني ١٠ دقايق = ٢٥ طوبة"),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: "10",
+                    child: Row(
+                      children: [
+                        Icon(Icons.construction, color: Colors.yellow),
+                        SizedBox(width: 8),
+                        Text("مشاركة في الموضوع = ١٠ طوبات"),
+                      ],
+                    ),
+                  ),
+                ],
+                onChanged: (value) => setState(() => selectedScore = value ?? ""),
               ),
               const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: selectedRating.isNotEmpty ? _submit : null,
-                child: const Text("Submit Score"),
+                onPressed: isProcessing ? null : selectedScore.isNotEmpty ? _submit : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFf9d950),
+                  foregroundColor: Colors.black,
+                  minimumSize: const Size(double.infinity, 50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: isProcessing
+                    ? const CircularProgressIndicator()
+                    : const Text("تسجيل النقاط", style: TextStyle(fontSize: 16)),
               ),
-            ]
+            ],
+            if (apiResponse != null) ...[
+              const SizedBox(height: 20),
+              Card(
+                elevation: 5,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Center(
+                        child: Text(
+                          "تم تسجيل النقاط بنجاح",
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildInfoRow("الاسم:", apiResponse!['userData']['name']),
+                      _buildInfoRow("الفصل:", apiResponse!['userData']['class']),
+                      _buildInfoRow("الفريق:", apiResponse!['userData']['team']),
+                      const Divider(height: 30, thickness: 1),
+                      _buildInfoRow("النقاط السابقة:",
+                          "${apiResponse!['userData']['previousScore']} طوبة",
+                          isBold: true),
+                      _buildInfoRow("النقاط الجديدة:",
+                          "${apiResponse!['userData']['newScore']} طوبة",
+                          isBold: true),
+                      const SizedBox(height: 10),
+                      Center(
+                        child: Text(
+                          "تم إضافة ${int.parse(selectedScore)} طوبة",
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.blue,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
