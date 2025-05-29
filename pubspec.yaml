@@ -1,0 +1,24 @@
+name: scoring_thanwy_app
+description: "A new Flutter project."
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  mobile_scanner: ^3.5.1 # ✅ Replace qr_code_scanner
+  http: ^1.1.0
+  provider: ^6.1.1
+  google_fonts: ^6.0.0
+  dio: ^5.4.1 # or latest version
+  logger: ^2.0.2
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+flutter:
+  uses-material-design: true
